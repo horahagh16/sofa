@@ -196,7 +196,7 @@ export default function App() {
             </div>
           </div>
           <div className="rule" />
-          <p className="fine">Nothing is saved — rooms and chats disappear when everyone leaves.</p>
+          <p className="fine">Nothing is saved — rooms and chats disappear when everyone leaves. <span title="App version">· build {__BUILD__}</span></p>
         </div>
         <div className="steps">
           {[

@@ -49,6 +49,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [vidErr, setVidErr] = useState(null);
+  const [vidDiag, setVidDiag] = useState('');
   const [noSound, setNoSound] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -140,7 +141,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
       }
       case 'url':
         pb.current = { playing: false, time: 0, at: Date.now() };
-        setUrl(msg.url); setEditingUrl(false); setVidErr(null); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
+        setUrl(msg.url); setEditingUrl(false); setVidErr(null); setVidDiag(''); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
         push(msg.by === meId ? 'You loaded the movie for everyone' : `${nameOf(msg.by)} loaded the movie`, true);
         break;
       case 'playback':
@@ -266,7 +267,19 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
     if (v.videoWidth === 0) setVidErr('video');
     applyShared();
   };
-  const onVideoError = e => setVidErr(e.target.error?.code === 4 && isMkv(url) ? 'mkv' : 'link');
+  const onVideoError = e => {
+    const err = e.target.error;
+    setVidErr(err?.code === 4 && isMkv(url) ? 'mkv' : 'link');
+    // Collect details the person can screenshot when a link won't play.
+    const v = document.createElement('video');
+    const can = ['video/mp4; codecs="avc1.42E01E, mp4a.40.2"', 'video/webm; codecs="vp9, opus"', 'video/x-matroska']
+      .map(t => `${t.split(';')[0].split('/')[1]}:${v.canPlayType(t) || 'no'}`).join(' ');
+    const base = `Error ${err?.code ?? '?'} ${err?.message || ''} · ${can} · ${navigator.userAgent} · build ${__BUILD__}`;
+    setVidDiag(base);
+    fetch(url, { headers: { Range: 'bytes=0-1' }, referrerPolicy: 'no-referrer' })
+      .then(r => setVidDiag(`HTTP ${r.status} ${r.headers.get('content-type') || ''} · ${base}`))
+      .catch(() => setVidDiag(`HTTP check refused (cross-site or network) · ${base}`));
+  };
 
   const fullscreen = () => {
     const el = playerRef.current, v = videoRef.current;
@@ -394,6 +407,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                   <div className="overlay-msg err">
                     <h3>{VIDEO_ERRORS[vidErr][0]}</h3>
                     <p>{VIDEO_ERRORS[vidErr][1]}</p>
+                    {vidDiag && <code className="diag">{vidDiag}</code>}
                     {iAmHost && <button className="btn-light" onClick={changeUrl}>Try another link</button>}
                   </div>
                 )}
