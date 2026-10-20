@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-00541596-eec2-4c8d-8370-a00a8536dd04/styles.css">
+  <script src="_ds/modernist-00541596-eec2-4c8d-8370-a00a8536dd04/_ds_bundle.js"></script>
+  <style>body{margin:0;background:var(--color-bg)} a{color:var(--color-accent)} a:hover{color:var(--color-accent-600)}
+  @keyframes wtFloat{0%{transform:translateY(0) scale(.5);opacity:0}12%{opacity:1;transform:translateY(-16px) scale(1)}100%{transform:translateY(-240px) scale(1);opacity:0}}</style>
+</helmet>
+
+<sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+  <div data-screen-label="Home" style="min-height:100vh;display:flex;flex-direction:column">
+    <nav class="nav">
+      <div class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;background:var(--color-accent);display:block"></span>Sofa</div>
+      <span style="font-size:13px;color:var(--color-neutral-700)">No account. No uploads.</span>
+    </nav>
+    <section style="flex:1;padding:clamp(32px,6vw,72px) var(--space-8);display:flex;flex-direction:column;gap:var(--space-8)">
+      <h1 style="font-size:clamp(44px,7.5vw,104px);line-height:0.98;letter-spacing:-0.035em;margin:0;max-width:13ch;text-wrap:balance">Watch a movie together, from anywhere.</h1>
+      <p style="font-size:19px;max-width:46ch;margin:0;color:var(--color-neutral-800);text-wrap:pretty">Create a room, share the link, paste any video URL. Everyone watches in sync, chats and sees each other.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:var(--space-6);align-items:flex-end">
+        <button class="btn btn-primary" onClick="{{ create }}" style="white-space:nowrap;flex:none;font-size:17px;padding:16px 20px;min-width:260px;justify-content:space-between;gap:24px">Create a room
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </button>
+        <div class="field" style="flex:0 1 380px">
+          <label>Got a room link or code?</label>
+          <div style="display:flex;gap:var(--space-2)">
+            <input class="input" placeholder="e.g. kxq-4mtp" value="{{ joinCode }}" onChange="{{ onJoinCode }}" onKeyDown="{{ onJoinKey }}" style="min-height:44px">
+            <button class="btn btn-secondary" onClick="{{ joinExisting }}" style="white-space:nowrap;flex:none;min-height:44px">Join</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));border-top:2px solid var(--color-divider);border-bottom:2px solid var(--color-divider)">
+      <div style="padding:var(--space-8);display:flex;flex-direction:column;gap:var(--space-2);border-right:2px solid var(--color-divider)">
+        <span style="font-weight:800;color:var(--color-accent);font-size:14px">01</span>
+        <h4 style="margin:0">Create a room</h4>
+        <p style="margin:0;color:var(--color-neutral-700)">One click. You get a private link to send to friends.</p>
+      </div>
+      <div style="padding:var(--space-8);display:flex;flex-direction:column;gap:var(--space-2);border-right:2px solid var(--color-divider)">
+        <span style="font-weight:800;color:var(--color-accent);font-size:14px">02</span>
+        <h4 style="margin:0">Paste a movie link</h4>
+        <p style="margin:0;color:var(--color-neutral-700)">Any direct video URL — like opening a network stream. Nothing is uploaded.</p>
+      </div>
+      <div style="padding:var(--space-8);display:flex;flex-direction:column;gap:var(--space-2)">
+        <span style="font-weight:800;color:var(--color-accent);font-size:14px">03</span>
+        <h4 style="margin:0">Watch, chat, see faces</h4>
+        <p style="margin:0;color:var(--color-neutral-700)">The host controls playback and can hand it over. Camera is optional.</p>
+      </div>
+    </div>
+    <footer style="padding:var(--space-4) var(--space-8);font-size:12px;color:var(--color-neutral-700)">Nothing is saved — a room and its chat disappear when everyone leaves.</footer>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isJoin }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Join" style="min-height:100vh;display:flex;flex-direction:column">
+    <nav class="nav">
+      <div class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;background:var(--color-accent);display:block"></span>Sofa</div>
+      <span class="tag tag-neutral" style="white-space:nowrap">Room {{ code }}</span>
+    </nav>
+    <div style="flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr))">
+      <div style="padding:var(--space-8);border-right:2px solid var(--color-divider);display:flex;flex-direction:column;gap:var(--space-3)">
+        <div style="position:relative;aspect-ratio:4/3;background:var(--color-neutral-900);color:var(--color-neutral-300);display:grid;place-items:center;overflow:hidden">
+          <sc-if value="{{ camOn }}">
+            <video data-self="1" autoPlay="{{ true }}" muted="{{ true }}" playsInline="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
+          </sc-if>
+          <sc-if value="{{ camOff }}">
+            <div style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-6);width:100%">
+              <span style="font-size:56px;font-weight:800;color:var(--color-bg);line-height:1">{{ initial }}</span>
+              <span style="font-size:14px">Camera is off</span>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+          <button class="btn btn-secondary" onClick="{{ toggleCam }}" style="white-space:nowrap;flex:none;min-height:44px;gap:10px">
+            <sc-if value="{{ camOn }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect></svg></sc-if>
+            <sc-if value="{{ camOff }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect><line x1="2" y1="2" x2="22" y2="22"></line></svg></sc-if>
+            {{ camLabel }}
+          </button>
+          <button class="btn btn-secondary" onClick="{{ toggleMic }}" style="white-space:nowrap;flex:none;min-height:44px;gap:10px">
+            <sc-if value="{{ micOn }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg></sc-if>
+            <sc-if value="{{ micOff }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line><line x1="2" y1="2" x2="22" y2="22"></line></svg></sc-if>
+            {{ micLabel }}
+          </button>
+        </div>
+        <sc-if value="{{ camErr }}"><p style="margin:0;font-size:13px;color:var(--color-accent-700)">{{ camErr }}</p></sc-if>
+      </div>
+      <div style="padding:var(--space-8);display:flex;flex-direction:column;gap:var(--space-6);justify-content:center;max-width:560px">
+        <div>
+          <h6 style="color:var(--color-accent);margin:0 0 var(--space-2)">{{ joinKicker }}</h6>
+          <h1 style="font-size:clamp(36px,4.5vw,56px);margin:0;letter-spacing:-0.03em">Join room <span style="white-space:nowrap">{{ code }}</span></h1>
+        </div>
+        <div class="field">
+          <label>Your name — friends see this</label>
+          <input class="input" placeholder="e.g. Sam" value="{{ nameInput }}" onChange="{{ onName }}" onKeyDown="{{ onNameKey }}" style="min-height:48px;font-size:16px">
+        </div>
+        <button class="btn btn-primary" onClick="{{ enter }}" style="white-space:nowrap;font-size:16px;padding:14px 20px;justify-content:space-between">Enter room
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </button>
+        <p style="margin:0;font-size:12px;color:var(--color-neutral-700)">Camera and mic are optional. Nothing is recorded or saved.</p>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isRoom }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Room" style="min-height:100vh;display:flex;flex-direction:column">
+    <nav class="nav" style="flex-wrap:wrap;gap:var(--space-3)">
+      <div class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;background:var(--color-accent);display:block"></span>Sofa</div>
+      <div style="display:flex;align-items:center;border:1px solid var(--color-divider);flex:none">
+        <span style="padding:6px 12px;font-size:13px;color:var(--color-neutral-700);white-space:nowrap">Room <strong style="color:var(--color-text)">{{ code }}</strong></span>
+        <button class="btn" onClick="{{ copyLink }}" style="white-space:nowrap;flex:none;border-left:1px solid var(--color-divider);gap:8px;min-height:36px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+          {{ copyLabel }}
+        </button>
+      </div>
+      <span class="tag tag-accent" style="white-space:nowrap">{{ watchingLabel }}</span>
+      <div class="seg" role="radiogroup" aria-label="Layout" style="flex:none">
+        <label class="seg-opt"><input type="radio" name="wt-layout" checked="{{ isTheater }}" onChange="{{ setTheater }}">Theater</label>
+        <label class="seg-opt"><input type="radio" name="wt-layout" checked="{{ isSplit }}" onChange="{{ setSplit }}">Split</label>
+      </div>
+      <button class="btn btn-secondary" onClick="{{ toggleCam }}" title="Camera" style="flex:none;width:40px;height:40px;padding:0">
+        <sc-if value="{{ camOn }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect></svg></sc-if>
+        <sc-if value="{{ camOff }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"></path><rect x="2" y="6" width="14" height="12" rx="2"></rect><line x1="2" y1="2" x2="22" y2="22"></line></svg></sc-if>
+      </button>
+      <button class="btn btn-secondary" onClick="{{ toggleMic }}" title="Microphone" style="flex:none;width:40px;height:40px;padding:0">
+        <sc-if value="{{ micOn }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg></sc-if>
+        <sc-if value="{{ micOff }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line><line x1="2" y1="2" x2="22" y2="22"></line></svg></sc-if>
+      </button>
+      <button class="btn btn-primary" onClick="{{ leave }}" style="white-space:nowrap;flex:none;gap:8px;min-height:40px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" x2="9" y1="12" y2="12"></line></svg>
+        Leave
+      </button>
+    </nav>
+    <div style="flex:1;display:flex;flex-wrap:wrap;align-items:stretch">
+      <main style="flex:{{ mainFlex }};min-width:0;display:flex;flex-direction:column;border-right:2px solid var(--color-divider)">
+        <div ref="{{ playerRef }}" style="position:relative;aspect-ratio:16/9;max-height:calc(100vh - 190px);min-height:240px;background:var(--color-neutral-900);color:var(--color-neutral-200);overflow:hidden">
+          <sc-if value="{{ showPaste }}" hint-placeholder-val="{{ true }}">
+            <form onSubmit="{{ setMovie }}" style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:var(--space-4);padding:clamp(20px,5vw,64px)">
+              <h6 style="margin:0;color:var(--color-accent-400)">Open network stream</h6>
+              <h2 style="margin:0;color:var(--color-bg);font-size:clamp(24px,3.4vw,44px);letter-spacing:-0.025em;max-width:18ch">Paste a movie link to start watching.</h2>
+              <div style="display:flex;gap:var(--space-2);max-width:720px;flex-wrap:wrap">
+                <input class="input" placeholder="https://…/movie.mp4" value="{{ urlInput }}" onChange="{{ onUrlInput }}" style="flex:1 1 240px;min-height:48px;font-size:16px;background:var(--color-bg)">
+                <button class="btn btn-primary" type="submit" style="white-space:nowrap;flex:none;min-height:48px;padding:0 20px;font-size:15px;justify-content:space-between;gap:20px">Load for everyone
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                </button>
+              </div>
+              <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;font-size:13px;color:var(--color-neutral-400)">
+                <span>Direct links (.mp4, .webm) work best.</span>
+                <button class="btn btn-ghost" type="button" onClick="{{ useSample }}" style="white-space:nowrap;flex:none;color:var(--color-accent-400);font-size:13px">Try a sample movie</button>
+              </div>
+            </form>
+          </sc-if>
+          <sc-if value="{{ showWaiting }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:var(--space-3);padding:clamp(20px,5vw,64px)">
+              <h6 style="margin:0;color:var(--color-accent-400)">Waiting for the host</h6>
+              <h2 style="margin:0;color:var(--color-bg);font-size:clamp(24px,3.4vw,44px);letter-spacing:-0.025em;max-width:18ch">{{ hostName }} is picking the movie.</h2>
+              <p style="margin:0;color:var(--color-neutral-300)">It will start here for you automatically.</p>
+            </div>
+          </sc-if>
+          <sc-if value="{{ hasUrl }}" hint-placeholder-val="{{ false }}">
+            <video ref="{{ videoRef }}" playsInline="{{ true }}" onClick="{{ togglePlay }}" onPlay="{{ onPlay }}" onPause="{{ onPause }}" onTimeUpdate="{{ onTime }}" onLoadedMetadata="{{ onMeta }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;cursor:pointer"></video>
+            <sc-if value="{{ showBigPlay }}">
+              <button onClick="{{ togglePlay }}" style="position:absolute;left:var(--space-6);bottom:var(--space-6);display:flex;align-items:center;gap:14px;background:var(--color-accent);color:var(--color-bg);border:0;padding:16px 22px;font:800 17px var(--font-heading);cursor:pointer;white-space:nowrap">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                Play for everyone
+              </button>
+            </sc-if>
+            <sc-if value="{{ vidErr }}">
+              <div style="position:absolute;inset:0;background:var(--color-neutral-900);display:flex;flex-direction:column;justify-content:center;gap:var(--space-3);padding:clamp(20px,5vw,64px)">
+                <h3 style="margin:0;color:var(--color-bg)">This link can't be played.</h3>
+                <p style="margin:0;max-width:48ch;color:var(--color-neutral-300)">Make sure it points straight to a video file (ends in .mp4 or .webm), not a web page.</p>
+                <sc-if value="{{ iAmHost }}"><div><button class="btn btn-primary" onClick="{{ changeUrl }}" style="white-space:nowrap">Try another link</button></div></sc-if>
+              </div>
+            </sc-if>
+          </sc-if>
+          {{ reactionsEl }}
+        </div>
+        <sc-if value="{{ hasUrl }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-4);border-bottom:2px solid var(--color-divider);flex-wrap:wrap">
+            <button class="btn btn-primary" onClick="{{ togglePlay }}" disabled="{{ cantControl }}" title="Play / pause" style="flex:none;width:44px;height:44px;padding:0">
+              <sc-if value="{{ playing }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="14" y="4" width="4" height="16"></rect><rect x="6" y="4" width="4" height="16"></rect></svg></sc-if>
+              <sc-if value="{{ paused }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg></sc-if>
+            </button>
+            <span style="font-size:13px;font-variant-numeric:tabular-nums;font-weight:600">{{ curLabel }}</span>
+            <input type="range" min="0" max="{{ dur }}" step="0.1" value="{{ cur }}" onChange="{{ seek }}" disabled="{{ cantControl }}" style="flex:1 1 160px;accent-color:var(--color-accent);min-width:120px">
+            <span style="font-size:13px;font-variant-numeric:tabular-nums;color:var(--color-neutral-700)">{{ durLabel }}</span>
+            <sc-if value="{{ iAmHost }}">
+              <button class="btn btn-secondary" onClick="{{ changeUrl }}" style="white-space:nowrap;flex:none;gap:8px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                Change link
+              </button>
+            </sc-if>
+            <button class="btn btn-secondary" onClick="{{ fullscreen }}" title="Full screen" style="flex:none;width:36px;height:36px;padding:0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-4);border-bottom:2px solid var(--color-divider);flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:var(--space-2);margin-right:auto;flex-wrap:wrap">
+              <span class="tag {{ ctrlTagClass }}" style="white-space:nowrap">{{ ctrlLabel }}</span>
+              <sc-if value="{{ showTakeBack }}"><button class="btn btn-ghost" onClick="{{ takeBack }}" style="white-space:nowrap;flex:none;font-size:13px">Take back control</button></sc-if>
+              <sc-if value="{{ showAsk }}"><button class="btn btn-ghost" onClick="{{ askControl }}" style="white-space:nowrap;flex:none;font-size:13px">Ask for control</button></sc-if>
+              <sc-if value="{{ askPending }}"><span style="font-size:13px;color:var(--color-neutral-700)">Request sent to {{ hostName }}…</span></sc-if>
+            </div>
+            <div style="display:flex;gap:2px;flex-wrap:wrap" role="group" aria-label="Reactions">
+              <sc-for list="{{ emojis }}" as="e" hint-placeholder-count="6">
+                <button class="btn btn-secondary" onClick="{{ e.react }}" title="React" style="flex:none;width:40px;height:40px;padding:0;font-size:20px;border-color:transparent">{{ e.e }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isTheater }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:var(--space-3);padding:var(--space-4)">
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <div style="position:relative;aspect-ratio:16/10;background:var(--color-neutral-900);overflow:hidden;outline:2px solid var(--color-accent);outline-offset:-2px">
+                <sc-if value="{{ camOn }}"><video data-self="1" autoPlay="{{ true }}" muted="{{ true }}" playsInline="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video></sc-if>
+                <sc-if value="{{ camOff }}"><span style="position:absolute;left:12px;top:8px;font-size:34px;font-weight:800;color:var(--color-bg)">{{ initial }}</span></sc-if>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap;min-width:0">
+                <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ name }} (you)</span>
+                <sc-if value="{{ selfBadge }}"><span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--color-accent-700);white-space:nowrap">{{ selfBadge }}</span></sc-if>
+              </div>
+            </div>
+            <sc-for list="{{ people }}" as="p" hint-placeholder-count="2">
+              <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                <div style="position:relative;aspect-ratio:16/10;background:var(--color-neutral-800);overflow:hidden">
+                  <span style="position:absolute;left:12px;top:8px;font-size:34px;font-weight:800;color:var(--color-neutral-300)">{{ p.ini }}</span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:var(--space-2);flex-wrap:wrap;min-width:0">
+                  <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ p.label }}</span>
+                  <sc-if value="{{ p.badge }}"><span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--color-accent-700);white-space:nowrap">{{ p.badge }}</span></sc-if>
+                  <sc-if value="{{ p.canGive }}"><button class="btn btn-ghost" onClick="{{ p.give }}" style="white-space:nowrap;flex:none;font-size:12px;padding:0;color:var(--color-accent-700)">Give control</button></sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </main>
+      <aside style="flex:{{ asideFlex }};min-width:0;height:calc(100vh - 66px);min-height:420px;display:flex;flex-direction:column">
+        <sc-if value="{{ showRail }}" hint-placeholder-val="{{ false }}">
+          <button class="btn" onClick="{{ openChat }}" title="Open chat" style="flex:1;flex-direction:column;justify-content:flex-start;align-items:center;gap:var(--space-2);padding:var(--space-4) 0;width:100%">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <sc-if value="{{ unread }}"><span style="background:var(--color-accent);color:var(--color-bg);font-size:11px;padding:1px 6px">{{ unread }}</span></sc-if>
+          </button>
+        </sc-if>
+        <sc-if value="{{ showChat }}" hint-placeholder-val="{{ true }}">
+          <sc-if value="{{ isSplit }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:var(--space-3);padding:var(--space-3);border-bottom:2px solid var(--color-divider);flex:none;max-height:38%;overflow-y:auto">
+              <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                <div style="position:relative;aspect-ratio:4/3;background:var(--color-neutral-900);overflow:hidden;outline:2px solid var(--color-accent);outline-offset:-2px">
+                  <sc-if value="{{ camOn }}"><video data-self="1" autoPlay="{{ true }}" muted="{{ true }}" playsInline="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video></sc-if>
+                  <sc-if value="{{ camOff }}"><span style="position:absolute;left:10px;top:6px;font-size:28px;font-weight:800;color:var(--color-bg)">{{ initial }}</span></sc-if>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                  <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">You</span>
+                  <sc-if value="{{ selfBadge }}"><span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--color-accent-700)">{{ selfBadge }}</span></sc-if>
+                </div>
+              </div>
+              <sc-for list="{{ people }}" as="p" hint-placeholder-count="2">
+                <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                  <div style="position:relative;aspect-ratio:4/3;background:var(--color-neutral-800);overflow:hidden">
+                    <span style="position:absolute;left:10px;top:6px;font-size:28px;font-weight:800;color:var(--color-neutral-300)">{{ p.ini }}</span>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                    <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.label }}</span>
+                    <sc-if value="{{ p.badge }}"><span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--color-accent-700)">{{ p.badge }}</span></sc-if>
+                    <sc-if value="{{ p.canGive }}"><button class="btn btn-ghost" onClick="{{ p.give }}" style="white-space:nowrap;font-size:12px;padding:2px 0;justify-content:flex-start;color:var(--color-accent-700)">Give control</button></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="padding:var(--space-2) var(--space-4);border-bottom:2px solid var(--color-divider);display:flex;align-items:center;min-height:48px;flex:none">
+            <h6 style="margin:0;margin-right:auto">Chat</h6>
+            <sc-if value="{{ isTheater }}"><button class="btn btn-ghost" onClick="{{ closeChat }}" style="white-space:nowrap;flex:none;font-size:13px;gap:4px">Hide
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+            </button></sc-if>
+          </div>
+          <sc-for list="{{ requests }}" as="r" hint-placeholder-count="0">
+            <div style="padding:var(--space-3) var(--space-4);background:var(--color-accent-100);border-bottom:2px solid var(--color-divider);display:flex;flex-direction:column;gap:var(--space-2);flex:none">
+              <span style="font-size:14px;color:var(--color-accent-900)"><strong>{{ r.name }}</strong> wants control of the movie.</span>
+              <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+                <button class="btn btn-primary" onClick="{{ r.allow }}" style="white-space:nowrap">Give control</button>
+                <button class="btn btn-secondary" onClick="{{ r.deny }}" style="white-space:nowrap">Not now</button>
+              </div>
+            </div>
+          </sc-for>
+          <div ref="{{ chatRef }}" style="flex:1;min-height:200px;overflow-y:auto;padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)">
+            <sc-for list="{{ msgs }}" as="m" hint-placeholder-count="3">
+              <sc-if value="{{ m.isSys }}">
+                <div style="font-size:12px;color:var(--color-neutral-700);border-left:2px solid var(--color-divider);padding-left:var(--space-2)">{{ m.text }} · {{ m.time }}</div>
+              </sc-if>
+              <sc-if value="{{ m.isMsg }}">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <div style="display:flex;gap:var(--space-2);align-items:baseline;font-size:12px">
+                    <strong style="color:{{ m.color }}">{{ m.who }}</strong>
+                    <span style="color:var(--color-neutral-600)">{{ m.time }}</span>
+                  </div>
+                  <div style="font-size:15px;text-wrap:pretty;overflow-wrap:anywhere">{{ m.text }}</div>
+                </div>
+              </sc-if>
+            </sc-for>
+          </div>
+          <div style="border-top:2px solid var(--color-divider);padding:var(--space-3) var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);flex:none">
+            <div style="display:flex;gap:var(--space-2)">
+              <input class="input" placeholder="Say something…" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onDraftKey }}" style="min-height:44px">
+              <button class="btn btn-primary" onClick="{{ send }}" title="Send" style="flex:none;width:44px;height:44px;padding:0">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+              </button>
+            </div>
+            <span style="font-size:11px;color:var(--color-neutral-600)">Not saved.</span>
+          </div>
+        </sc-if>
+      </aside>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isEnded }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Left room" style="min-height:100vh;display:flex;flex-direction:column">
+    <nav class="nav">
+      <div class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;background:var(--color-accent);display:block"></span>Sofa</div>
+    </nav>
+    <section style="flex:1;padding:clamp(32px,6vw,72px) var(--space-8);display:flex;flex-direction:column;gap:var(--space-6);justify-content:center">
+      <h1 style="font-size:clamp(44px,7vw,96px);line-height:0.98;letter-spacing:-0.035em;margin:0;max-width:12ch">You left the room.</h1>
+      <p style="font-size:19px;margin:0;max-width:44ch;color:var(--color-neutral-800)">Thanks for watching. Start another room any time.</p>
+      <div style="display:flex;gap:var(--space-3);flex-wrap:wrap">
+        <button class="btn btn-primary" onClick="{{ create }}" style="white-space:nowrap;flex:none;font-size:16px;padding:14px 20px">Start a new room</button>
+        <button class="btn btn-secondary" onClick="{{ rejoin }}" style="white-space:nowrap;flex:none;font-size:16px;padding:14px 20px">Rejoin {{ code }}</button>
+      </div>
+    </section>
+    <footer style="padding:var(--space-4) var(--space-8);font-size:12px;color:var(--color-neutral-700);border-top:2px solid var(--color-divider)">Nothing was saved — chat, movie link and camera are cleared.</footer>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;layout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;theater&quot;,&quot;split&quot;],&quot;default&quot;:&quot;theater&quot;,&quot;tsType&quot;:&quot;'theater'|'split'&quot;,&quot;section&quot;:&quot;Room&quot;},&quot;friends&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;min&quot;:0,&quot;max&quot;:3,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Room&quot;}}">
+const FRIENDS = [
+  { name: 'Maya', ini: 'M', muted: false },
+  { name: 'Jonas', ini: 'J', muted: true },
+  { name: 'Ada', ini: 'A', muted: false }
+];
+const LINES = ['hey! what are we watching?', 'popcorn ready', 'ok this is good', 'haha', 'love this part'];
+const REPLIES = ['agreed', 'haha yes', 'same', 'no spoilers!', 'good call', 'ok!'];
+const EMOJI = ['😂', '😮', '😍', '😱', '👏', '🔥'];
+const SAMPLE = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+const ME = '__me';
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; const p = n => String(n).padStart(2, '0'); return h ? `${h}:${p(m)}:${p(x)}` : `${m}:${p(x)}`; };
+const now = () => { const d = new Date(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+let uid = 0;
+
+class Component extends DCLogic {
+  state = { screen: 'home', code: '', joinCode: '', name: '', isHost: true, host: ME, controller: ME, askPending: false, requests: [],
+    camOn: false, micOn: false, camErr: '', url: '', urlInput: '', playing: false, cur: 0, dur: 0, vidErr: false,
+    msgs: [], present: [], draft: '', copied: false, layout: null, chatOpen: true, seenCount: 0, reactions: [] };
+  videoRef = React.createRef(); chatRef = React.createRef(); playerRef = React.createRef();
+  timers = [];
+
+  componentDidMount() {
+    const m = (location.hash || '').match(/room-([a-z0-9-]+)/i);
+    if (m) this.setState({ screen: 'join', code: m[1].toLowerCase(), isHost: false });
+  }
+  componentWillUnmount() { this.stopCam(); this.clearTimers(); }
+  componentDidUpdate() {
+    document.querySelectorAll('video[data-self]').forEach(v => { if (v.srcObject !== (this.stream || null)) v.srcObject = this.stream || null; });
+    const v = this.videoRef.current;
+    if (v) { v.onerror = this.onVidErr; if (this.state.url && v.getAttribute('src') !== this.state.url) v.setAttribute('src', this.state.url); }
+    if (this.state.msgs.length !== this._lastMsgCount) {
+      this._lastMsgCount = this.state.msgs.length;
+      if (this.chatRef.current) this.chatRef.current.scrollTop = this.chatRef.current.scrollHeight;
+    }
+  }
+  later(fn, ms) { this.timers.push(setTimeout(fn, ms)); }
+  clearTimers() { this.timers.forEach(clearTimeout); this.timers = []; clearInterval(this.reactTimer); }
+  push(who, text, sys) { this.setState(s => ({ msgs: [...s.msgs, { id: ++uid, who, text, sys, time: now() }] })); }
+  newCode() { const a = 'abcdefghjkmnpqrstuvwxyz23456789'; const p = n => Array.from({ length: n }, () => a[Math.floor(Math.random() * a.length)]).join(''); return p(3) + '-' + p(4); }
+  setHash(h) { try { history.replaceState(null, '', h ? '#' + h : location.pathname + location.search); } catch (e) {} }
+  nameOf(id) { return id === ME ? 'You' : id; }
+
+  create = () => { const code = this.newCode(); this.setHash('room-' + code); this.setState({ screen: 'join', code, isHost: true }); };
+  joinExisting = () => {
+    const raw = this.state.joinCode.trim(); if (!raw) return;
+    const m = raw.match(/([a-z0-9]{3}-[a-z0-9]{4})/i); const code = (m ? m[1] : raw).toLowerCase();
+    this.setHash('room-' + code); this.setState({ screen: 'join', code, joinCode: '', isHost: false });
+  };
+
+  async ensureStream() {
+    if (this.stream) return true;
+    try { this.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
+    catch (e) {
+      try { this.stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+      catch (e2) { this.setState({ camErr: 'Camera blocked by the browser — you can still join and watch.' }); return false; }
+    }
+    this.stream.getTracks().forEach(t => t.enabled = false);
+    return true;
+  }
+  toggleCam = async () => {
+    if (!this.state.camOn && !(await this.ensureStream())) return;
+    const on = !this.state.camOn;
+    this.stream && this.stream.getVideoTracks().forEach(t => t.enabled = on);
+    this.setState({ camOn: on, camErr: '' });
+  };
+  toggleMic = async () => {
+    if (!this.state.micOn && !(await this.ensureStream())) return;
+    const tracks = this.stream ? this.stream.getAudioTracks() : [];
+    if (!tracks.length) { this.setState({ camErr: 'No microphone available.' }); return; }
+    const on = !this.state.micOn; tracks.forEach(t => t.enabled = on);
+    this.setState({ micOn: on, camErr: '' });
+  };
+  stopCam() { if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; } }
+
+  enter = () => {
+    const name = this.state.name.trim() || 'Guest';
+    const host = this.state.isHost ? ME : 'Maya';
+    this.setState({ screen: 'room', name, host, controller: host, msgs: [], present: this.state.isHost ? [] : ['Maya'], requests: [], askPending: false, seenCount: 0, chatOpen: true });
+    this.push('', this.state.isHost ? 'You created the room — you are the host' : 'You joined. Maya is the host', true);
+    const n = Math.max(0, Math.min(3, this.props.friends ?? 2));
+    const list = this.state.isHost ? FRIENDS.slice(0, n) : FRIENDS.slice(1, Math.max(1, n));
+    list.forEach((f, i) => {
+      this.later(() => { this.setState(s => ({ present: [...s.present, f.name] })); this.push('', `${f.name} joined`, true); }, 1200 + i * 2200);
+      this.later(() => this.push(f.name, LINES[i % LINES.length]), 2600 + i * 2600);
+    });
+    if (!this.state.isHost) {
+      this.later(() => this.push('Maya', 'hey! loading the movie now'), 1800);
+      this.later(() => { this.setState({ url: SAMPLE, vidErr: false, cur: 0, dur: 0 }); this.push('', 'Maya loaded the movie', true); }, 4200);
+    } else if (list.length > 1) {
+      this.later(() => { if (this.state.controller === ME && this.state.present.includes(list[1].name)) this.setState(s => ({ requests: [...s.requests, list[1].name] })); }, 15000);
+    }
+    if (list.find(f => f.name === 'Ada')) this.later(() => { this.setState(s => ({ present: s.present.filter(p => p !== 'Ada'), requests: s.requests.filter(r => r !== 'Ada') })); this.push('', 'Ada left', true); }, 45000);
+    this.reactTimer = setInterval(() => { if (this.state.playing && this.state.present.length && Math.random() < 0.6) this.react(pick(EMOJI), pick(this.state.present)); }, 5000);
+  };
+
+  giveControl = name => {
+    this.setState(s => ({ controller: name, requests: s.requests.filter(r => r !== name) }));
+    this.push('', `You gave control to ${name}`, true);
+  };
+  takeBack = () => { this.setState({ controller: ME }); this.push('', 'You took back control', true); };
+  askControl = () => {
+    const h = this.state.host;
+    this.setState({ askPending: true }); this.push('', `You asked ${h} for control`, true);
+    this.later(() => { this.setState({ askPending: false, controller: ME }); this.push('', `${h} gave you control`, true); }, 2200);
+  };
+  deny = name => { this.setState(s => ({ requests: s.requests.filter(r => r !== name) })); this.push('', `You declined ${name}'s request`, true); };
+
+  react = (e, who) => {
+    const id = ++uid;
+    this.setState(s => ({ reactions: [...s.reactions, { id, e, who: who || 'You', x: 8 + Math.random() * 78 }] }));
+    this.later(() => this.setState(s => ({ reactions: s.reactions.filter(r => r.id !== id) })), 2700);
+  };
+
+  setMovie = e => {
+    e && e.preventDefault && e.preventDefault();
+    const u = this.state.urlInput.trim(); if (!u) return;
+    this.setState({ url: u, vidErr: false, playing: false, cur: 0, dur: 0 });
+    this.push('', 'You loaded the movie for everyone', true);
+  };
+  useSample = () => this.setState({ urlInput: SAMPLE }, () => this.setMovie());
+  changeUrl = () => this.setState({ url: '', urlInput: this.state.url, playing: false });
+  canControl() { return this.state.controller === ME; }
+  togglePlay = () => { const v = this.videoRef.current; if (!v || !this.canControl()) return; v.paused ? v.play().catch(() => {}) : v.pause(); };
+  onPlay = () => { this.setState({ playing: true }); this.push('', `You played at ${fmt(this.videoRef.current?.currentTime)} — synced for everyone`, true); };
+  onPause = () => { this.setState({ playing: false }); this.push('', `You paused at ${fmt(this.videoRef.current?.currentTime)}`, true); };
+  onTime = e => this.setState({ cur: e.target.currentTime });
+  onMeta = e => this.setState({ dur: e.target.duration || 0 });
+  onVidErr = () => this.setState({ vidErr: true });
+  seek = e => { if (!this.canControl()) return; const v = this.videoRef.current; if (v) v.currentTime = +e.target.value; this.setState({ cur: +e.target.value }); };
+  fullscreen = () => { const el = this.playerRef.current; el && el.requestFullscreen && el.requestFullscreen().catch(() => {}); };
+  copyLink = () => {
+    const link = location.href.split('#')[0] + '#room-' + this.state.code;
+    try { navigator.clipboard.writeText(link).catch(() => {}); } catch (e) {}
+    this.setState({ copied: true }); this.later(() => this.setState({ copied: false }), 1600);
+  };
+  send = () => {
+    const t = this.state.draft.trim(); if (!t) return;
+    this.setState({ draft: '' }); this.push(this.state.name, t);
+    const p = this.state.present;
+    if (p.length) this.later(() => this.push(pick(p), pick(REPLIES)), 1800);
+  };
+  leave = () => {
+    this.stopCam(); this.clearTimers();
+    this.setState({ screen: 'ended', url: '', urlInput: '', msgs: [], present: [], requests: [], reactions: [], playing: false, camOn: false, micOn: false, draft: '' });
+  };
+  rejoin = () => { this.setHash('room-' + this.state.code); this.setState({ screen: 'join' }); };
+
+  renderVals() {
+    const s = this.state;
+    const layout = s.layout || this.props.layout || 'theater';
+    const theater = layout === 'theater';
+    const iAmHost = s.host === ME, mine = s.controller === ME;
+    const badge = id => [s.host === id ? 'Host' : '', s.controller === id ? 'Control' : ''].filter(Boolean).join(' · ');
+    const people = FRIENDS.filter(f => s.present.includes(f.name)).map(f => ({
+      ...f, label: f.muted ? `${f.name} · muted` : f.name, badge: badge(f.name),
+      canGive: iAmHost && s.controller !== f.name, give: () => this.giveControl(f.name)
+    }));
+    const showChat = !theater || s.chatOpen;
+    const unread = showChat ? 0 : Math.max(0, s.msgs.length - s.seenCount);
+    const reactionsEl = React.createElement('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' } },
+      s.reactions.map(r => React.createElement('div', { key: r.id, style: { position: 'absolute', bottom: '10%', left: r.x + '%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, animation: 'wtFloat 2.6s ease-out forwards' } },
+        React.createElement('span', { style: { fontSize: 44, lineHeight: 1 } }, r.e),
+        React.createElement('span', { style: { fontSize: 11, fontWeight: 600, background: 'var(--color-bg)', color: 'var(--color-text)', padding: '1px 6px' } }, r.who))));
+    return {
+      isHome: s.screen === 'home', isJoin: s.screen === 'join', isRoom: s.screen === 'room', isEnded: s.screen === 'ended',
+      code: s.code, joinCode: s.joinCode, name: s.name || 'Guest', nameInput: s.name, initial: (s.name.trim()[0] || '?').toUpperCase(),
+      joinKicker: s.isHost ? 'Your new room' : "You're invited",
+      camOn: s.camOn, camOff: !s.camOn, micOn: s.micOn, micOff: !s.micOn, camErr: s.camErr,
+      camLabel: s.camOn ? 'Camera on' : 'Camera off', micLabel: s.micOn ? 'Mic on' : 'Mic off',
+      url: s.url, urlInput: s.urlInput, hasUrl: !!s.url, showPaste: !s.url && iAmHost, showWaiting: !s.url && !iAmHost, vidErr: s.vidErr,
+      hostName: this.nameOf(s.host), iAmHost,
+      playing: s.playing, paused: !s.playing, showBigPlay: mine && !s.playing && s.cur === 0 && !s.vidErr,
+      cantControl: !mine, ctrlLabel: mine ? "You're in control" : `${this.nameOf(s.controller)} is in control`,
+      ctrlTagClass: mine ? 'tag-accent' : 'tag-neutral',
+      showTakeBack: iAmHost && !mine, showAsk: !iAmHost && !mine && !s.askPending, askPending: s.askPending,
+      cur: s.cur, dur: s.dur || 0, curLabel: fmt(s.cur), durLabel: fmt(s.dur),
+      emojis: EMOJI.map(e => ({ e, react: () => this.react(e) })), reactionsEl,
+      people, selfBadge: badge(ME), watchingLabel: `${people.length + 1} watching`, copyLabel: s.copied ? 'Copied' : 'Copy link',
+      isTheater: theater, isSplit: !theater, setTheater: () => this.setState({ layout: 'theater' }), setSplit: () => this.setState({ layout: 'split' }),
+      mainFlex: theater ? '999 1 560px' : '3 1 520px', asideFlex: theater ? (s.chatOpen ? '1 1 320px' : '0 0 56px') : '2 1 360px',
+      showChat, showRail: !showChat, unread: unread || '',
+      openChat: () => this.setState({ chatOpen: true }), closeChat: () => this.setState({ chatOpen: false, seenCount: s.msgs.length }),
+      requests: s.requests.map(n => ({ name: n, allow: () => this.giveControl(n), deny: () => this.deny(n) })),
+      msgs: s.msgs.map(m => ({ ...m, isSys: !!m.sys, isMsg: !m.sys, color: m.who === s.name ? 'var(--color-accent-700)' : 'var(--color-text)' })),
+      draft: s.draft,
+      videoRef: this.videoRef, chatRef: this.chatRef, playerRef: this.playerRef,
+      create: this.create, joinExisting: this.joinExisting, toggleCam: this.toggleCam, toggleMic: this.toggleMic,
+      enter: this.enter, setMovie: this.setMovie, useSample: this.useSample, changeUrl: this.changeUrl,
+      togglePlay: this.togglePlay, onPlay: this.onPlay, onPause: this.onPause, onTime: this.onTime, onMeta: this.onMeta,
+      seek: this.seek, fullscreen: this.fullscreen, copyLink: this.copyLink, send: this.send,
+      leave: this.leave, rejoin: this.rejoin, takeBack: this.takeBack, askControl: this.askControl,
+      onJoinCode: e => this.setState({ joinCode: e.target.value }), onJoinKey: e => { if (e.key === 'Enter') this.joinExisting(); },
+      onName: e => this.setState({ name: e.target.value }), onNameKey: e => { if (e.key === 'Enter') this.enter(); },
+      onUrlInput: e => this.setState({ urlInput: e.target.value }),
+      onDraft: e => this.setState({ draft: e.target.value }), onDraftKey: e => { if (e.key === 'Enter') { e.preventDefault(); this.send(); } }
+    };
+  }
+}
+</script>
+</body>
+</html>
