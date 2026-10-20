@@ -13,7 +13,7 @@ const HEARTBEAT_MS = 4000;
 const DRIFT_S = 0.75;
 const isMkv = u => /\.mkv(?:$|[?#])/i.test(u);
 const VIDEO_ERRORS = {
-  link: ["This link can't be played", 'Make sure it points straight to a video file (.mp4, .webm or .mkv), not a web page.'],
+  link: ["This link can't be played", 'Make sure it points straight to a video file (.mp4, .webm or .mkv), not a web page. Some sites also block their videos from playing on other websites.'],
   mkv: ["This browser can't open this .mkv", 'Most .mkv files play in Chrome and Edge. If it still fails there, the file uses a format browsers can’t decode — an .mp4 (H.264 + AAC) version will work everywhere.'],
   video: ["The picture can't be shown", 'This file’s video is probably HEVC (H.265), which most browsers can’t decode. Use a version encoded as H.264, VP9 or AV1.']
 };
