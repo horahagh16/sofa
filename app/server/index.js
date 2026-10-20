@@ -28,15 +28,28 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/healthz') { res.writeHead(200); res.end('ok'); return; }
   let file = path.join(DIST, path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));
   if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found — run `npm run build` first.'); return; }
-    const ext = path.extname(file);
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
-    });
-    res.end(data);
-  });
+  let size;
+  try { size = fs.statSync(file).size; } catch { res.writeHead(404); res.end('Not found — run `npm run build` first.'); return; }
+  const ext = path.extname(file);
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': ext === '.html' ? 'no-cache' : url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+    'Accept-Ranges': 'bytes'
+  };
+  // Byte ranges let the browser seek inside the bundled sample video.
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (m && (m[1] || m[2])) {
+    let start = m[1] ? +m[1] : size - +m[2];
+    let end = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;
+    if (start < 0) start = 0;
+    if (start >= size || start > end) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    fs.createReadStream(file, { start, end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, { ...headers, 'Content-Length': size });
+  if (req.method === 'HEAD') { res.end(); return; }
+  fs.createReadStream(file).pipe(res);
 });
 
 /** @type {Map<string, {code: string, host: string, controller: string, url: string, playback: {playing: boolean, time: number, at: number}, members: Map<string, any>, colorIdx: number}>} */

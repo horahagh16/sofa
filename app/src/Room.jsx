@@ -7,7 +7,8 @@ import {
 } from './icons.jsx';
 
 const EMOJI = ['😂', '😮', '😍', '😱', '👏', '🔥'];
-const SAMPLE = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// Served by our own server so it plays from any network.
+const SAMPLE = `${location.origin}/sample.webm`;
 const SELF_COLOR = '#5b6ee1';
 const HEARTBEAT_MS = 4000;
 const DRIFT_S = 0.75;
