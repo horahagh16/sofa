@@ -41,5 +41,10 @@ TURN_CREDENTIAL=...
 
 ## Known limits
 
-- The movie link must point directly to a video file the browser can play: `.mp4`, `.webm`, or `.m3u8` in Safari. YouTube pages, links from sites that block other sites from using them, and DRM-protected streams won't play.
+- The movie link must point directly to a video file the browser can play: `.mp4`, `.webm`, `.mkv`, or `.m3u8` in Safari. YouTube pages, links from sites that block other sites from using them, and DRM-protected streams won't play.
+- `.mkv` is a container, so whether a file plays depends on what's inside it:
+  - **Plays in Chrome and Edge:** H.264, VP9 or AV1 video with AAC, Opus or MP3 audio. Safari can't open `.mkv` at all.
+  - **HEVC (H.265) video:** most browsers play the sound with a black picture. The app detects this and says so.
+  - **AC3 or DTS audio** (common in movie rips): the video plays silently. The app shows a "No sound?" notice.
+  - To fix a file, convert it once with `ffmpeg -i in.mkv -c:v copy -c:a aac out.mp4`. If the video is HEVC, use `-c:v libx264` instead of `-c:v copy`.
 - The full-mesh video setup works well for 2–4 people, which is why rooms are capped at 4.

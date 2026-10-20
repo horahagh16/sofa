@@ -21,7 +21,7 @@ if (process.env.TURN_URL) {
   });
 }
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webm': 'video/webm', '.mp4': 'video/mp4' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webm': 'video/webm', '.mp4': 'video/mp4', '.mkv': 'video/x-matroska' };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');

@@ -11,6 +11,12 @@ const SAMPLE = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sampl
 const SELF_COLOR = '#5b6ee1';
 const HEARTBEAT_MS = 4000;
 const DRIFT_S = 0.75;
+const isMkv = u => /\.mkv(?:$|[?#])/i.test(u);
+const VIDEO_ERRORS = {
+  link: ["This link can't be played", 'Make sure it points straight to a video file (.mp4, .webm or .mkv), not a web page.'],
+  mkv: ["This browser can't open this .mkv", 'Most .mkv files play in Chrome and Edge. If it still fails there, the file uses a format browsers can’t decode — an .mp4 (H.264 + AAC) version will work everywhere.'],
+  video: ["The picture can't be shown", 'This file’s video is probably HEVC (H.265), which most browsers can’t decode. Use a version encoded as H.264, VP9 or AV1.']
+};
 
 const fmt = s => {
   s = Math.max(0, Math.floor(s || 0));
@@ -41,7 +47,8 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const [url, setUrl] = useState(welcome.state.url);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState('');
-  const [vidErr, setVidErr] = useState(false);
+  const [vidErr, setVidErr] = useState(null);
+  const [noSound, setNoSound] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
@@ -132,7 +139,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
       }
       case 'url':
         pb.current = { playing: false, time: 0, at: Date.now() };
-        setUrl(msg.url); setEditingUrl(false); setVidErr(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
+        setUrl(msg.url); setEditingUrl(false); setVidErr(null); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
         push(msg.by === meId ? 'You loaded the movie for everyone' : `${nameOf(msg.by)} loaded the movie`, true);
         break;
       case 'playback':
@@ -243,6 +250,23 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
     clearTimeout(seekTimer.current);
     seekTimer.current = setTimeout(() => { push(`You jumped to ${fmt(t)}`, true); share('seek', t); }, 250);
   };
+  // Browsers open many .mkv files but silently skip audio they can't decode (AC3, DTS…).
+  const checkSound = () => {
+    if (!isMkv(url)) return;
+    later(() => {
+      const v = videoRef.current;
+      if (!v || v.paused || v.currentTime < 1) return;
+      if (v.webkitAudioDecodedByteCount === 0 || v.mozHasAudio === false) setNoSound(true);
+    }, 3000);
+  };
+  const onMeta = e => {
+    const v = e.target;
+    setDur(v.duration || 0);
+    if (v.videoWidth === 0) setVidErr('video');
+    applyShared();
+  };
+  const onVideoError = e => setVidErr(e.target.error?.code === 4 && isMkv(url) ? 'mkv' : 'link');
+
   const fullscreen = () => {
     const el = playerRef.current, v = videoRef.current;
     if (el?.requestFullscreen) el.requestFullscreen().catch(() => {});
@@ -333,7 +357,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                   <button type="submit" className="btn-light">Load for everyone</button>
                 </div>
                 <div className="paste-hint">
-                  <span>Direct links (.mp4, .webm) work best.</span>
+                  <span>Direct links (.mp4, .webm, .mkv) work best.</span>
                   <button type="button" className="link-light" onClick={useSample}>Try a sample movie</button>
                   {editingUrl && url && <button type="button" className="link-light" onClick={() => setEditingUrl(false)}>Keep current movie</button>}
                 </div>
@@ -351,8 +375,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                   key={url} ref={videoRef} className="movie" src={url} playsInline preload="auto"
                   onClick={togglePlay} onPlay={onPlay} onPause={onPause}
                   onTimeUpdate={e => setCur(e.target.currentTime)}
-                  onLoadedMetadata={e => { setDur(e.target.duration || 0); applyShared(); }}
-                  onError={() => setVidErr(true)}
+                  onPlaying={checkSound} onLoadedMetadata={onMeta} onError={onVideoError}
                 />
                 {showBigPlay && (
                   <>
@@ -360,10 +383,16 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                     {!mine && <span className="big-play-label">Tap to catch up with {nameOf(R.controller)}</span>}
                   </>
                 )}
+                {noSound && !vidErr && (
+                  <div className="notice">
+                    <span>No sound? This .mkv’s audio is probably AC3 or DTS, which browsers can’t play. Use a version with AAC or Opus audio.</span>
+                    <button className="panel-close" onClick={() => setNoSound(false)} title="Dismiss"><CloseIcon /></button>
+                  </div>
+                )}
                 {vidErr && (
                   <div className="overlay-msg err">
-                    <h3>This link can't be played</h3>
-                    <p>Make sure it points straight to a video file (.mp4 or .webm), not a web page.</p>
+                    <h3>{VIDEO_ERRORS[vidErr][0]}</h3>
+                    <p>{VIDEO_ERRORS[vidErr][1]}</p>
                     {iAmHost && <button className="btn-light" onClick={changeUrl}>Try another link</button>}
                   </div>
                 )}
