@@ -52,7 +52,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-/** @type {Map<string, {code: string, host: string, controller: string, url: string, playback: {playing: boolean, time: number, at: number}, members: Map<string, any>, colorIdx: number}>} */
+/** @type {Map<string, {code: string, host: string, controller: string, url: string, title: string, local: boolean, playback: {playing: boolean, time: number, at: number}, members: Map<string, any>, colorIdx: number}>} */
 const rooms = new Map();
 
 const send = (ws, msg) => { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); };
@@ -63,7 +63,7 @@ const playbackNow = room => {
   return { playing: p.playing, time: p.playing ? p.time + (Date.now() - p.at) / 1000 : p.time };
 };
 const roomState = room => ({
-  host: room.host, controller: room.controller, url: room.url,
+  host: room.host, controller: room.controller, url: room.url, title: room.title, local: room.local,
   members: [...room.members.values()].map(publicMember)
 });
 const sys = (room, text, extra) => broadcast(room, { type: 'event', ...extra, text });
@@ -99,7 +99,7 @@ wss.on('connection', ws => {
       let r = rooms.get(code);
       if (r && r.members.size >= MAX_PEOPLE) { send(ws, { type: 'error', reason: 'full' }); return; }
       if (!r) {
-        r = { code, host: '', controller: '', url: '', playback: { playing: false, time: 0, at: Date.now() }, members: new Map(), colorIdx: 0 };
+        r = { code, host: '', controller: '', url: '', title: '', local: false, playback: { playing: false, time: 0, at: Date.now() }, members: new Map(), colorIdx: 0 };
         rooms.set(code, r);
       }
       room = r;
@@ -134,9 +134,12 @@ wss.on('connection', ws => {
       }
       case 'setUrl': {
         if (!isHost) break;
-        room.url = String(msg.url || '').trim().slice(0, 4096);
+        // A "local" movie means everyone opens their own copy; only its file name is shared.
+        room.local = !!msg.local;
+        room.url = room.local ? '' : String(msg.url || '').trim().slice(0, 4096);
+        room.title = String(msg.title || '').trim().slice(0, 200);
         room.playback = { playing: false, time: 0, at: Date.now() };
-        broadcast(room, { type: 'url', url: room.url, by: me.id });
+        broadcast(room, { type: 'url', url: room.url, title: room.title, local: room.local, by: me.id });
         break;
       }
       case 'playback': {
@@ -146,6 +149,9 @@ wss.on('connection', ws => {
         broadcast(room, { type: 'playback', playing: room.playback.playing, time, action: msg.action, by: me.id }, me.id);
         break;
       }
+      case 'copy':
+        broadcast(room, { type: 'copy', from: me.id, file: !!msg.file }, me.id);
+        break;
       case 'askControl': {
         if (isController) break;
         const host = room.members.get(room.host);

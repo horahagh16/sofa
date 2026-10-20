@@ -7,6 +7,7 @@ This is the working version of the `Watch Together v3` design in `../project/`. 
 - **Front end** (`src/`): React and Vite. It covers the four screens from the design: Home, Join, Room and Left.
 - **Room server** (`server/index.js`): a single Node process. It serves the built front end and runs a WebSocket at `/ws`. The WebSocket passes along chat, reactions, play/pause/seek, control handovers, join and leave events, and WebRTC signalling. The first person into a room becomes the host. If the host leaves, the next person in the room takes over. A room holds at most 4 people.
 - **Cameras and mics**: peer-to-peer WebRTC, with every person connected directly to every other person. Video and audio go straight between browsers and never reach the server.
+- **Movie source**: the host either shares a direct link, or picks **Play a file from this computer**. With a file, only its name is shared and everyone opens their own copy, the way you would in VLC. Anyone can also switch to **their own copy** at any time (a file or a personal link), for example when the shared link is blocked on their network. Files never leave the browser.
 - **Playback**: each browser loads the movie URL itself. Only the person in control sends play, pause and seek, plus a sync heartbeat every 4 seconds. The other players correct themselves when they drift more than 0.75 seconds. If a browser blocks autoplay, the viewer sees a "Tap to catch up" button.
 
 ## Run locally

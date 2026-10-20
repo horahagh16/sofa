@@ -3,7 +3,7 @@ import { PeerMesh } from './peers.js';
 import { SelfVideo, StreamAudio, StreamVideo } from './media.jsx';
 import {
   CamIcon, ChatIcon, CloseIcon, CopyIcon, FullscreenIcon, HandIcon, HangUpIcon, LayoutIcon,
-  LinkIcon, MicIcon, MutedBadgeIcon, PauseIcon, PeopleIcon, PlayIcon, SendIcon, SmileIcon
+  FolderIcon, LinkIcon, MicIcon, MutedBadgeIcon, PauseIcon, PeopleIcon, PlayIcon, SendIcon, SmileIcon
 } from './icons.jsx';
 
 const EMOJI = ['😂', '😮', '😍', '😱', '👏', '🔥'];
@@ -16,6 +16,7 @@ const isMkv = u => /\.mkv(?:$|[?#])/i.test(u);
 const VIDEO_ERRORS = {
   link: ["This link can't be played", 'Make sure it points straight to a video file (.mp4, .webm or .mkv), not a web page. Some sites also block their videos from playing on other websites.'],
   mkv: ["This browser can't open this .mkv", 'Most .mkv files play in Chrome and Edge. If it still fails there, the file uses a format browsers can’t decode — an .mp4 (H.264 + AAC) version will work everywhere.'],
+  file: ["This file can't be played in the browser", 'Chrome can’t decode the format inside this file, even though VLC can. An .mp4 (H.264 + AAC) version will work — convert it once with ffmpeg.'],
   video: ["The picture can't be shown", 'This file’s video is probably HEVC (H.265), which most browsers can’t decode. Use a version encoded as H.264, VP9 or AV1.']
 };
 
@@ -45,7 +46,12 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const [, rerender] = useReducer(n => n + 1, 0);
   const R = room.current;
 
-  const [url, setUrl] = useState(welcome.state.url);
+  const [movie, setMovieState] = useState({ url: welcome.state.url, title: welcome.state.title, local: welcome.state.local });
+  // This viewer's own copy (a file from their computer or their own link). Never leaves the browser.
+  const [own, setOwn] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [ownLink, setOwnLink] = useState('');
+  const pendingOwn = useRef(null);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [vidErr, setVidErr] = useState(null);
@@ -86,14 +92,18 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const push = (text, sys, who) => setMsgs(m => [...m, { id: ++uid, text, sys, who, time: now() }]);
   const iControl = () => R.controller === meId;
 
-  const applyShared = () => {
+  // Play/pause events we caused ourselves while lining up with the room; they must not be re-shared.
+  const quiet = useRef(false);
+  const applyShared = force => {
     const v = videoRef.current;
-    if (!v || iControl() || v.readyState < 1) return;
+    if (!v || (iControl() && !force) || v.readyState < 1) return;
     const p = pb.current;
     const target = p.time + (p.playing ? (Date.now() - p.at) / 1000 : 0);
     if (Math.abs(v.currentTime - target) > DRIFT_S) v.currentTime = target;
-    if (p.playing && v.paused) v.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
-    else if (!p.playing && !v.paused) v.pause();
+    if (p.playing && v.paused) {
+      quiet.current = true;
+      v.play().then(() => setNeedsTap(false)).catch(() => { quiet.current = false; setNeedsTap(true); });
+    } else if (!p.playing && !v.paused) { quiet.current = true; v.pause(); }
     if (!p.playing) setNeedsTap(false);
   };
 
@@ -141,8 +151,14 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
       }
       case 'url':
         pb.current = { playing: false, time: 0, at: Date.now() };
-        setUrl(msg.url); setEditingUrl(false); setVidErr(null); setVidDiag(''); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
-        push(msg.by === meId ? 'You loaded the movie for everyone' : `${nameOf(msg.by)} loaded the movie`, true);
+        setMovieState({ url: msg.url, title: msg.title, local: msg.local });
+        setOwn(msg.by === meId ? pendingOwn.current : null); pendingOwn.current = null;
+        setPickerOpen(false); setEditingUrl(false); setVidErr(null); setVidDiag(''); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
+        if (msg.local) {
+          push(msg.by === meId
+            ? `You're playing “${msg.title}” from your computer — everyone opens their own copy`
+            : `${nameOf(msg.by)} is playing “${msg.title}” — open your own copy to watch`, true);
+        } else push(msg.by === meId ? 'You loaded the movie for everyone' : `${nameOf(msg.by)} loaded the movie`, true);
         break;
       case 'playback':
         pb.current = { playing: msg.playing, time: msg.time, at: Date.now() };
@@ -150,6 +166,9 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
         if (msg.action === 'play') push(`${nameOf(msg.by)} played at ${fmt(msg.time)}`, true);
         else if (msg.action === 'pause') push(`${nameOf(msg.by)} paused at ${fmt(msg.time)}`, true);
         else if (msg.action === 'seek') push(`${nameOf(msg.by)} jumped to ${fmt(msg.time)}`, true);
+        break;
+      case 'copy':
+        push(`${nameOf(msg.from)} is watching their own copy`, true);
         break;
       case 'request':
         setRequests(r => (r.includes(msg.from) ? r : [...r, msg.from]));
@@ -205,6 +224,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   }, []);
 
   useEffect(() => { meshRef.current?.setTracks(stream); }, [stream]);
+  useEffect(() => () => { if (own?.file) URL.revokeObjectURL(own.src); }, [own]);
   const firstMedia = useRef(true);
   useEffect(() => {
     if (firstMedia.current) { firstMedia.current = false; return; }
@@ -225,7 +245,27 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
     sock.send({ type: 'setUrl', url: u });
   };
   const useSample = () => { setUrlInput(SAMPLE); sock.send({ type: 'setUrl', url: SAMPLE }); };
-  const changeUrl = () => { setUrlInput(url); setEditingUrl(true); };
+  const changeUrl = () => { setUrlInput(movie.url); setEditingUrl(true); };
+  // Host: play a file from this computer; everyone else is asked to open their own copy.
+  const hostFile = e => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    pendingOwn.current = { src: URL.createObjectURL(file), label: file.name, file: true };
+    sock.send({ type: 'setUrl', local: true, title: file.name });
+  };
+  const useOwn = next => {
+    setOwn(next); setPickerOpen(false); setVidErr(null); setVidDiag(''); setNoSound(false);
+    sock.send({ type: 'copy', file: next.file });
+  };
+  const ownFile = e => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (file) useOwn({ src: URL.createObjectURL(file), label: file.name, file: true });
+  };
+  const ownLinkSubmit = e => {
+    e.preventDefault();
+    const u = ownLink.trim();
+    if (u) useOwn({ src: u, label: u, file: false });
+  };
 
   const togglePlay = () => {
     const v = videoRef.current; if (!v) return;
@@ -234,12 +274,14 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   };
   const onPlay = () => {
     setPlaying(true);
+    if (quiet.current) { quiet.current = false; return; }
     if (!iControl()) return;
     push(`You played at ${fmt(videoRef.current?.currentTime)} — synced for everyone`, true);
     share('play');
   };
   const onPause = () => {
     setPlaying(false);
+    if (quiet.current) { quiet.current = false; return; }
     if (!iControl()) return;
     push(`You paused at ${fmt(videoRef.current?.currentTime)}`, true);
     share('pause');
@@ -254,7 +296,7 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   };
   // Browsers open many .mkv files but silently skip audio they can't decode (AC3, DTS…).
   const checkSound = () => {
-    if (!isMkv(url)) return;
+    if (!isMkv(srcName)) return;
     later(() => {
       const v = videoRef.current;
       if (!v || v.paused || v.currentTime < 1) return;
@@ -265,18 +307,18 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
     const v = e.target;
     setDur(v.duration || 0);
     if (v.videoWidth === 0) setVidErr('video');
-    applyShared();
+    applyShared(true);
   };
   const onVideoError = e => {
     const err = e.target.error;
-    setVidErr(err?.code === 4 && isMkv(url) ? 'mkv' : 'link');
+    setVidErr(own?.file ? 'file' : err?.code === 4 && isMkv(srcName) ? 'mkv' : 'link');
     // Collect details the person can screenshot when a link won't play.
     const v = document.createElement('video');
     const can = ['video/mp4; codecs="avc1.42E01E, mp4a.40.2"', 'video/webm; codecs="vp9, opus"', 'video/x-matroska']
       .map(t => `${t.split(';')[0].split('/')[1]}:${v.canPlayType(t) || 'no'}`).join(' ');
     const base = `Error ${err?.code ?? '?'} ${err?.message || ''} · ${can} · ${navigator.userAgent} · build ${__BUILD__}`;
     setVidDiag(base);
-    fetch(url, { headers: { Range: 'bytes=0-1' }, referrerPolicy: 'no-referrer' })
+    fetch(src, { headers: { Range: 'bytes=0-1' }, referrerPolicy: 'no-referrer' })
       .then(r => setVidDiag(`HTTP ${r.status} ${r.headers.get('content-type') || ''} · ${base}`))
       .catch(() => setVidDiag(`HTTP check refused (cross-site or network) · ${base}`));
   };
@@ -328,9 +370,13 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const suffix = id => (R.controller === id ? ' · in control' : R.host === id ? ' · host' : '');
   const chatOpen = panel === 'chat';
   const unread = chatOpen ? 0 : Math.max(0, msgs.length - seenCount);
-  const showPaste = iAmHost && (!url || editingUrl);
-  const showWaiting = !url && !iAmHost;
-  const hasUrl = !!url && !showPaste;
+  const hasMovie = movie.local || !!movie.url;
+  const src = own?.src || (movie.local ? '' : movie.url);
+  const srcName = own?.label || movie.url;
+  const showPaste = iAmHost && (!hasMovie || editingUrl);
+  const showWaiting = !hasMovie && !iAmHost;
+  const showPicker = !showPaste && hasMovie && (!src || pickerOpen);
+  const hasUrl = !!src && !showPaste && !showPicker;
   const showBigPlay = !vidErr && ((mine && !playing && cur === 0) || (!mine && needsTap));
   const tilesSide = tiles === 'side' && !panel;
   const count = others.length + 1;
@@ -370,10 +416,15 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                   <input placeholder="https://…/movie.mp4" value={urlInput} onChange={e => setUrlInput(e.target.value)} />
                   <button type="submit" className="btn-light">Load for everyone</button>
                 </div>
+                <div className="paste-or">
+                  <span>or</span>
+                  <label className="file-btn"><FolderIcon />Play a file from this computer<input type="file" accept="video/*,.mkv" hidden onChange={hostFile} /></label>
+                  <span>Everyone opens their own copy — nothing is uploaded.</span>
+                </div>
                 <div className="paste-hint">
                   <span>Direct links (.mp4, .webm, .mkv) work best.</span>
                   <button type="button" className="link-light" onClick={useSample}>Try a sample movie</button>
-                  {editingUrl && url && <button type="button" className="link-light" onClick={() => setEditingUrl(false)}>Keep current movie</button>}
+                  {editingUrl && hasMovie && <button type="button" className="link-light" onClick={() => setEditingUrl(false)}>Keep current movie</button>}
                 </div>
               </form>
             )}
@@ -383,10 +434,28 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                 <p>It will start here for you automatically.</p>
               </div>
             )}
+            {showPicker && (
+              <form className="paste" onSubmit={ownLinkSubmit}>
+                <div className="paste-kicker">{movie.local ? `${nameOf(R.host)} is playing a file from their computer` : 'Use your own copy'}</div>
+                <h2>{movie.local ? `Open your copy of “${movie.title}”` : 'Open your own copy of the movie'}</h2>
+                <div className="paste-or">
+                  <label className="file-btn"><FolderIcon />Choose a file<input type="file" accept="video/*,.mkv" hidden onChange={ownFile} /></label>
+                  <span>Pick the same movie on your computer. Nothing is uploaded — only play, pause and seek are shared.</span>
+                </div>
+                <div className="paste-row">
+                  <input placeholder="…or paste your own link to it" value={ownLink} onChange={e => setOwnLink(e.target.value)} />
+                  <button type="submit" className="btn-light">Use this link</button>
+                </div>
+                <div className="paste-hint">
+                  {pickerOpen && src && <button type="button" className="link-light" onClick={() => setPickerOpen(false)}>Cancel</button>}
+                  {own && !movie.local && movie.url && <button type="button" className="link-light" onClick={() => { setOwn(null); setPickerOpen(false); setVidErr(null); }}>Go back to the room’s link</button>}
+                </div>
+              </form>
+            )}
             {hasUrl && (
               <>
                 <video
-                  key={url} ref={videoRef} className="movie" src={url} playsInline preload="auto"
+                  key={src} ref={videoRef} className="movie" src={src} playsInline preload="auto"
                   onClick={togglePlay} onPlay={onPlay} onPause={onPause}
                   onTimeUpdate={e => setCur(e.target.currentTime)}
                   onPlaying={checkSound} onLoadedMetadata={onMeta} onError={onVideoError}
@@ -408,7 +477,10 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                     <h3>{VIDEO_ERRORS[vidErr][0]}</h3>
                     <p>{VIDEO_ERRORS[vidErr][1]}</p>
                     {vidDiag && <code className="diag">{vidDiag}</code>}
-                    {iAmHost && <button className="btn-light" onClick={changeUrl}>Try another link</button>}
+                    <div className="err-actions">
+                      <button className="btn-light" onClick={() => setPickerOpen(true)}>Use my own copy</button>
+                      {iAmHost && !movie.local && <button className="btn-ghost-light" onClick={changeUrl}>Try another link</button>}
+                    </div>
                   </div>
                 )}
                 <div className="controls">
@@ -418,7 +490,8 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                   <span className="time">{fmt(cur)} / {fmt(dur)}</span>
                   <input className="scrub" type="range" min="0" max={dur || 0} step="0.1" value={cur} onChange={seek} disabled={!mine} aria-label="Seek" />
                   <span className={'chip' + (mine ? ' on' : '')}>{mine ? "You're in control" : `${nameOf(R.controller)} is in control`}</span>
-                  {iAmHost && <button className="icon-btn" onClick={changeUrl} title="Change link"><LinkIcon /></button>}
+                  <button className="icon-btn" onClick={() => setPickerOpen(true)} title="Use my own copy"><FolderIcon /></button>
+                  {iAmHost && <button className="icon-btn" onClick={changeUrl} title="Change movie"><LinkIcon /></button>}
                   <button className="icon-btn" onClick={fullscreen} title="Full screen"><FullscreenIcon /></button>
                 </div>
               </>
