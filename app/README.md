@@ -7,7 +7,12 @@ This is the working version of the `Watch Together v3` design in `../project/`. 
 - **Front end** (`src/`): React and Vite. It covers the four screens from the design: Home, Join, Room and Left.
 - **Room server** (`server/index.js`): a single Node process. It serves the built front end and runs a WebSocket at `/ws`. The WebSocket passes along chat, reactions, play/pause/seek, control handovers, join and leave events, and WebRTC signalling. The first person into a room becomes the host. If the host leaves, the next person in the room takes over. A room holds at most 4 people.
 - **Cameras and mics**: peer-to-peer WebRTC, with every person connected directly to every other person. Video and audio go straight between browsers and never reach the server.
-- **Movie source**: the host either shares a direct link, or picks **Play a file from this computer**. With a file, only its name is shared and everyone opens their own copy, the way you would in VLC. Anyone can also switch to **their own copy** at any time (a file or a personal link), for example when the shared link is blocked on their network. Files never leave the browser.
+- **Movie source**: the host can do one of three things.
+  - **Paste a direct link.**
+  - **Share a file from their computer.** The file is uploaded in 8 MB chunks to a temporary file on the server. Everyone streams it from there (with seeking), while the host plays their own local copy. The file is deleted when the host replaces the movie, cancels the upload, or the room empties. It is also wiped when the server restarts. The limit is `MAX_UPLOAD_GB` (4 GB by default), and the server's free disk space is checked first.
+  - **Have everyone open their own copy.** Only the file name is shared.
+
+  Anyone can also switch to their own file or link at any time.
 - **Playback**: each browser loads the movie URL itself. Only the person in control sends play, pause and seek, plus a sync heartbeat every 4 seconds. The other players correct themselves when they drift more than 0.75 seconds. If a browser blocks autoplay, the viewer sees a "Tap to catch up" button.
 
 ## Run locally
@@ -30,9 +35,11 @@ Run a **single instance**, because rooms live in that process's memory.
 
 Browsers only allow camera access on HTTPS or `localhost`. The hosts above provide HTTPS automatically.
 
-### TURN server (recommended)
+### TURN server (needed for cameras across most networks)
 
-STUN alone connects most home networks. Some people sit behind strict firewalls or mobile carrier networks, and their cameras will only connect through a TURN relay. You can get one from a provider such as Cloudflare Calls TURN, Metered or Twilio, or run your own coturn server. Then set:
+If each person sees only their own camera, the browsers couldn't connect directly, and the tile shows "Can't connect video". A TURN relay fixes this.
+
+STUN alone (Cloudflare and Google STUN are built in) connects some home networks. Some people sit behind strict firewalls or mobile carrier networks, and their cameras will only connect through a TURN relay. For example, create a free account at metered.ca, open its TURN server page, and copy the URLs, username and credential it shows. Then set them in Render under **Environment**:
 
 ```
 TURN_URL=turn:turn.example.com:3478,turns:turn.example.com:5349

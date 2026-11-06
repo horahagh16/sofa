@@ -1,7 +1,9 @@
 // Sofa room server: serves the built front end and relays room events over WebSocket.
 // Everything lives in memory; a room is deleted the moment its last person leaves.
+// A movie the host shares is kept in a temporary file only while its room exists.
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -11,48 +13,125 @@ const PORT = Number(process.env.PORT) || 8787;
 const MAX_PEOPLE = 4;
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 const COLORS = ['#c2410c', '#0f766e', '#7e22ce', '#b45309'];
+const UPLOAD_DIR = path.join(os.tmpdir(), 'sofa-uploads');
+const MAX_UPLOAD = (Number(process.env.MAX_UPLOAD_GB) || 4) * 1024 ** 3;
+const MAX_CHUNK = 16 * 1024 * 1024;
+const DISK_MARGIN = 256 * 1024 * 1024;
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Leftovers from a previous run belong to rooms that no longer exist.
+fs.rmSync(UPLOAD_DIR, { recursive: true, force: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Google's STUN is unreachable on some networks, so offer a second one.
+const ICE_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 if (process.env.TURN_URL) {
   ICE_SERVERS.push({
-    urls: process.env.TURN_URL.split(','),
+    urls: process.env.TURN_URL.split(',').map(u => u.trim()).filter(Boolean),
     username: process.env.TURN_USERNAME,
     credential: process.env.TURN_CREDENTIAL
   });
 }
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webm': 'video/webm', '.mp4': 'video/mp4', '.mkv': 'video/x-matroska' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska' };
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://x');
-  if (url.pathname === '/healthz') { res.writeHead(200); res.end('ok'); return; }
-  let file = path.join(DIST, path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));
-  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+/** @type {Map<string, {id: string, room: any, file: string, name: string, size: number, received: number, done: boolean, busy: boolean}>} */
+const uploads = new Map();
+
+const removeUpload = id => {
+  const u = uploads.get(id);
+  if (!u) return;
+  uploads.delete(id);
+  if (u.room.upload === id) u.room.upload = '';
+  fs.rm(u.file, { force: true }, () => {});
+};
+
+// Serves a file, honouring byte ranges so videos can be seeked.
+function serveFile(req, res, file, headers) {
   let size;
-  try { size = fs.statSync(file).size; } catch { res.writeHead(404); res.end('Not found — run `npm run build` first.'); return; }
-  const ext = path.extname(file);
-  const headers = {
-    'Content-Type': MIME[ext] || 'application/octet-stream',
-    'Cache-Control': ext === '.html' ? 'no-cache' : url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
-    'Accept-Ranges': 'bytes'
-  };
-  // Byte ranges let the browser seek inside the bundled sample video.
+  try { size = fs.statSync(file).size; } catch { res.writeHead(404); res.end('Not found'); return; }
+  headers = { ...headers, 'Accept-Ranges': 'bytes' };
   const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
   if (m && (m[1] || m[2])) {
     let start = m[1] ? +m[1] : size - +m[2];
-    let end = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;
+    const end = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;
     if (start < 0) start = 0;
     if (start >= size || start > end) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
     res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    if (req.method === 'HEAD') { res.end(); return; }
     fs.createReadStream(file, { start, end }).pipe(res);
     return;
   }
   res.writeHead(200, { ...headers, 'Content-Length': size });
   if (req.method === 'HEAD') { res.end(); return; }
   fs.createReadStream(file).pipe(res);
+}
+
+// PUT /upload/<id>?offset=N appends one chunk of the host's movie.
+function receiveChunk(req, res, id, offset) {
+  const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+  const u = uploads.get(id);
+  if (!u) return json(404, { error: 'gone' });
+  if (u.done) return json(409, { received: u.received });
+  if (u.busy || offset !== u.received) return json(409, { received: u.received });
+  const declared = Number(req.headers['content-length']);
+  if (!declared || declared > MAX_CHUNK || u.received + declared > u.size) return json(413, { error: 'chunk' });
+  u.busy = true;
+  let got = 0;
+  const out = fs.createWriteStream(u.file, { flags: 'a' });
+  req.on('data', b => { got += b.length; if (got > declared) req.destroy(); });
+  req.pipe(out);
+  const fail = () => {
+    u.busy = false;
+    // Drop a partly written chunk so the next try starts from a clean offset.
+    try { fs.truncateSync(u.file, u.received); } catch { /* upload already removed */ }
+  };
+  req.on('close', () => { if (!req.complete) { out.destroy(); fail(); } });
+  out.on('error', () => { fail(); if (!res.headersSent) json(500, { error: 'write' }); });
+  out.on('finish', () => {
+    if (got !== declared) { fail(); if (!res.headersSent) json(400, { error: 'short' }); return; }
+    u.busy = false;
+    u.received += got;
+    if (!uploads.has(id)) { json(404, { error: 'gone' }); return; }
+    const room = u.room;
+    broadcast(room, { type: 'uploading', name: u.name, received: u.received, size: u.size, by: room.host });
+    if (u.received === u.size) {
+      u.done = true;
+      room.local = false;
+      room.title = u.name;
+      room.url = `/media/${id}/${encodeURIComponent(u.name)}`;
+      room.playback = { playing: false, time: 0, at: Date.now() };
+      broadcast(room, { type: 'url', url: room.url, title: room.title, local: false, shared: true, by: u.owner });
+    }
+    json(200, { received: u.received });
+  });
+}
+
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/healthz') { res.writeHead(200); res.end('ok'); return; }
+
+  const up = /^\/upload\/([0-9a-f-]{36})$/.exec(url.pathname);
+  if (up && req.method === 'PUT') { receiveChunk(req, res, up[1], Number(url.searchParams.get('offset'))); return; }
+
+  const media = /^\/media\/([0-9a-f-]{36})(?:\/.*)?$/.exec(url.pathname);
+  if (media) {
+    const u = uploads.get(media[1]);
+    if (!u || !u.done) { res.writeHead(404); res.end('This movie is no longer shared.'); return; }
+    serveFile(req, res, u.file, { 'Content-Type': MIME[path.extname(u.name).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'private, no-store' });
+    return;
+  }
+
+  let file = path.join(DIST, path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));
+  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  if (!fs.existsSync(file)) { res.writeHead(404); res.end('Not found — run `npm run build` first.'); return; }
+  const ext = path.extname(file);
+  serveFile(req, res, file, {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': ext === '.html' ? 'no-cache' : url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'
+  });
 });
 
-/** @type {Map<string, {code: string, host: string, controller: string, url: string, title: string, local: boolean, playback: {playing: boolean, time: number, at: number}, members: Map<string, any>, colorIdx: number}>} */
+/** @type {Map<string, {code: string, host: string, controller: string, url: string, title: string, local: boolean, upload: string, playback: {playing: boolean, time: number, at: number}, members: Map<string, any>, colorIdx: number}>} */
 const rooms = new Map();
 
 const send = (ws, msg) => { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); };
@@ -62,11 +141,18 @@ const playbackNow = room => {
   const p = room.playback;
   return { playing: p.playing, time: p.playing ? p.time + (Date.now() - p.at) / 1000 : p.time };
 };
-const roomState = room => ({
-  host: room.host, controller: room.controller, url: room.url, title: room.title, local: room.local,
-  members: [...room.members.values()].map(publicMember)
-});
-const sys = (room, text, extra) => broadcast(room, { type: 'event', ...extra, text });
+const roomState = room => {
+  const u = uploads.get(room.upload);
+  return {
+    host: room.host, controller: room.controller, url: room.url, title: room.title, local: room.local,
+    uploading: u && !u.done ? { name: u.name, received: u.received, size: u.size } : null,
+    members: [...room.members.values()].map(publicMember)
+  };
+};
+
+const freeDisk = () => {
+  try { const s = fs.statfsSync(UPLOAD_DIR); return s.bavail * s.bsize; } catch { return Infinity; }
+};
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 
@@ -79,7 +165,16 @@ wss.on('connection', ws => {
   const leave = () => {
     if (!room || !me) return;
     room.members.delete(me.id);
-    if (room.members.size === 0) { rooms.delete(room.code); room = null; return; }
+    const u = uploads.get(room.upload);
+    if (room.members.size === 0) {
+      if (room.upload) removeUpload(room.upload);
+      rooms.delete(room.code); room = null; return;
+    }
+    // An unfinished upload can't complete without the person sending it.
+    if (u && !u.done && u.owner === me.id) {
+      removeUpload(u.id);
+      broadcast(room, { type: 'uploading', cancelled: true, name: u.name });
+    }
     if (room.host === me.id) room.host = room.members.keys().next().value;
     if (room.controller === me.id) room.controller = room.host;
     broadcast(room, { type: 'left', id: me.id, state: roomState(room) });
@@ -99,7 +194,7 @@ wss.on('connection', ws => {
       let r = rooms.get(code);
       if (r && r.members.size >= MAX_PEOPLE) { send(ws, { type: 'error', reason: 'full' }); return; }
       if (!r) {
-        r = { code, host: '', controller: '', url: '', title: '', local: false, playback: { playing: false, time: 0, at: Date.now() }, members: new Map(), colorIdx: 0 };
+        r = { code, host: '', controller: '', url: '', title: '', local: false, upload: '', playback: { playing: false, time: 0, at: Date.now() }, members: new Map(), colorIdx: 0 };
         rooms.set(code, r);
       }
       room = r;
@@ -107,7 +202,7 @@ wss.on('connection', ws => {
       const created = r.members.size === 0;
       if (created) { r.host = me.id; r.controller = me.id; }
       r.members.set(me.id, me);
-      send(ws, { type: 'welcome', id: me.id, created, iceServers: ICE_SERVERS, state: roomState(r), playback: playbackNow(r) });
+      send(ws, { type: 'welcome', id: me.id, created, iceServers: ICE_SERVERS, maxUpload: MAX_UPLOAD, state: roomState(r), playback: playbackNow(r) });
       broadcast(r, { type: 'joined', member: publicMember(me), state: roomState(r) }, me.id);
       return;
     }
@@ -134,12 +229,37 @@ wss.on('connection', ws => {
       }
       case 'setUrl': {
         if (!isHost) break;
+        if (room.upload) removeUpload(room.upload);
         // A "local" movie means everyone opens their own copy; only its file name is shared.
         room.local = !!msg.local;
         room.url = room.local ? '' : String(msg.url || '').trim().slice(0, 4096);
         room.title = String(msg.title || '').trim().slice(0, 200);
         room.playback = { playing: false, time: 0, at: Date.now() };
         broadcast(room, { type: 'url', url: room.url, title: room.title, local: room.local, by: me.id });
+        break;
+      }
+      case 'startUpload': {
+        if (!isHost) break;
+        const size = Math.floor(Number(msg.size) || 0);
+        const name = String(msg.name || 'movie').replace(/[/\\]/g, '_').slice(0, 200);
+        if (size <= 0) break;
+        if (size > MAX_UPLOAD) { send(ws, { type: 'uploadError', reason: 'too-big', max: MAX_UPLOAD }); break; }
+        if (room.upload) removeUpload(room.upload);
+        if (size + DISK_MARGIN > freeDisk()) { send(ws, { type: 'uploadError', reason: 'no-space' }); break; }
+        const id = randomUUID();
+        const file = path.join(UPLOAD_DIR, id);
+        fs.writeFileSync(file, '');
+        uploads.set(id, { id, room, file, name, size, received: 0, done: false, busy: false, owner: me.id });
+        room.upload = id;
+        send(ws, { type: 'uploadReady', id, chunk: 8 * 1024 * 1024 });
+        broadcast(room, { type: 'uploading', name, received: 0, size, by: me.id });
+        break;
+      }
+      case 'cancelUpload': {
+        const u = uploads.get(room.upload);
+        if (!u || u.done || u.owner !== me.id) break;
+        removeUpload(u.id);
+        broadcast(room, { type: 'uploading', cancelled: true, name: u.name });
         break;
       }
       case 'playback': {

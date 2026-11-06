@@ -3,11 +3,12 @@
 // the camera or mic on later only swaps tracks (replaceTrack) and never renegotiates.
 
 export class PeerMesh {
-  constructor({ iceServers, signal, onStream, onGone }) {
+  constructor({ iceServers, signal, onStream, onGone, onState }) {
     this.iceServers = iceServers;
     this.signal = signal;
     this.onStream = onStream;
     this.onGone = onGone;
+    this.onState = onState || (() => {});
     this.peers = new Map();
     this.tracks = { audio: null, video: null };
   }
@@ -22,8 +23,10 @@ export class PeerMesh {
       this.onStream(id, peer.stream);
     };
     pc.onconnectionstatechange = () => {
+      this.onState(id, pc.connectionState);
       if (pc.connectionState === 'failed' && initiator) pc.restartIce();
     };
+    this.onState(id, 'connecting');
     if (initiator) {
       for (const kind of ['audio', 'video']) pc.addTransceiver(this.tracks[kind] || kind, { direction: 'sendrecv' });
       pc.onnegotiationneeded = async () => {

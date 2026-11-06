@@ -26,6 +26,9 @@ const fmt = s => {
   const p = n => String(n).padStart(2, '0');
   return h ? `${h}:${p(m)}:${p(x)}` : `${m}:${p(x)}`;
 };
+const mb = n => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+const size = n => (n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB` : mb(n));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => { const d = new Date(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 let uid = 0;
 
@@ -52,6 +55,13 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const [pickerOpen, setPickerOpen] = useState(false);
   const [ownLink, setOwnLink] = useState('');
   const pendingOwn = useRef(null);
+  // A movie the host is uploading for everyone: { name, received, size, by }.
+  const [upload, setUpload] = useState(welcome.state.uploading ? { ...welcome.state.uploading, by: welcome.state.host } : null);
+  const [uploadErr, setUploadErr] = useState('');
+  const uploadJob = useRef(null);
+  const [peerState, setPeerState] = useState({});
+  const hasRelay = welcome.iceServers.some(s => [].concat(s.urls).some(u => /^turns?:/.test(u)));
+  const warnedNoRelay = useRef(false);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [vidErr, setVidErr] = useState(null);
@@ -154,11 +164,32 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
         setMovieState({ url: msg.url, title: msg.title, local: msg.local });
         setOwn(msg.by === meId ? pendingOwn.current : null); pendingOwn.current = null;
         setPickerOpen(false); setEditingUrl(false); setVidErr(null); setVidDiag(''); setNoSound(false); setPlaying(false); setCur(0); setDur(0); setNeedsTap(false);
-        if (msg.local) {
+        if (msg.shared) {
+          setUpload(null);
+          push(msg.by === meId ? `“${msg.title}” is uploaded — everyone can watch it now` : `${nameOf(msg.by)} shared “${msg.title}” — it's ready to watch`, true);
+        } else if (msg.local) {
           push(msg.by === meId
             ? `You're playing “${msg.title}” from your computer — everyone opens their own copy`
             : `${nameOf(msg.by)} is playing “${msg.title}” — open your own copy to watch`, true);
         } else push(msg.by === meId ? 'You loaded the movie for everyone' : `${nameOf(msg.by)} loaded the movie`, true);
+        break;
+      case 'uploadReady':
+        runUpload(msg.id, msg.chunk);
+        break;
+      case 'uploadError':
+        uploadJob.current = null; pendingOwn.current = null; setUpload(null);
+        setUploadErr(msg.reason === 'too-big'
+          ? `That file is too big to share — the limit is ${size(msg.max)}.`
+          : "The server doesn't have room for a file that big right now.");
+        break;
+      case 'uploading':
+        if (msg.cancelled) {
+          setUpload(null);
+          push(`Sharing “${msg.name}” was cancelled`, true);
+        } else {
+          if (!upload) push(msg.by === meId ? `Uploading “${msg.name}” so everyone can watch it…` : `${nameOf(msg.by)} is uploading “${msg.name}” to share with everyone`, true);
+          setUpload({ name: msg.name, received: msg.received, size: msg.size, by: msg.by });
+        }
         break;
       case 'playback':
         pb.current = { playing: msg.playing, time: msg.time, at: Date.now() };
@@ -203,7 +234,17 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
       iceServers: welcome.iceServers,
       signal: (to, data) => sock.send({ type: 'signal', to, data }),
       onStream: (id, s) => setRemoteStreams(r => ({ ...r, [id]: s })),
-      onGone: id => setRemoteStreams(r => { const n = { ...r }; delete n[id]; return n; })
+      onGone: id => {
+        setRemoteStreams(r => { const n = { ...r }; delete n[id]; return n; });
+        setPeerState(r => { const n = { ...r }; delete n[id]; return n; });
+      },
+      onState: (id, st) => {
+        setPeerState(r => ({ ...r, [id]: st }));
+        if (st === 'failed' && !hasRelay && !warnedNoRelay.current) {
+          warnedNoRelay.current = true;
+          push(`Couldn't connect cameras and mics with ${nameOf(id)}. Your networks block direct connections — the room needs a relay (TURN) server.`, true);
+        }
+      }
     });
     meshRef.current = mesh;
     sock.listen(m => handleRef.current(m), () => { mesh.close(); onLeft('lost'); });
@@ -252,6 +293,45 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
     if (!file) return;
     pendingOwn.current = { src: URL.createObjectURL(file), label: file.name, file: true };
     sock.send({ type: 'setUrl', local: true, title: file.name });
+  };
+  // Host: upload a file to the room so everyone streams it from the server.
+  const shareFile = e => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    setUploadErr('');
+    if (file.size > welcome.maxUpload) { setUploadErr(`That file is too big to share — the limit is ${size(welcome.maxUpload)}.`); return; }
+    pendingOwn.current = { src: URL.createObjectURL(file), label: file.name, file: true };
+    uploadJob.current = { file, cancelled: false, t0: 0 };
+    sock.send({ type: 'startUpload', name: file.name, size: file.size });
+  };
+  const runUpload = async (id, chunk) => {
+    const job = uploadJob.current;
+    if (!job) return;
+    job.t0 = Date.now();
+    let offset = 0, tries = 0;
+    while (offset < job.file.size && !job.cancelled) {
+      try {
+        const r = await fetch(`/upload/${id}?offset=${offset}`, { method: 'PUT', body: job.file.slice(offset, Math.min(offset + chunk, job.file.size)) });
+        const body = await r.json().catch(() => ({}));
+        if (r.status === 404 || r.status === 413) break;
+        if (typeof body.received === 'number') offset = body.received;
+        if (r.ok) tries = 0;
+        else { if (++tries > 8) break; await sleep(500 * tries); }
+      } catch {
+        if (job.cancelled || ++tries > 8) break;
+        await sleep(1000 * 2 ** Math.min(tries, 4));
+      }
+    }
+    if (offset < job.file.size && !job.cancelled) {
+      setUploadErr('The upload stopped — check your connection and share the file again.');
+      sock.send({ type: 'cancelUpload' });
+    }
+    if (uploadJob.current === job) uploadJob.current = null;
+  };
+  const cancelUpload = () => {
+    if (uploadJob.current) uploadJob.current.cancelled = true;
+    uploadJob.current = null; pendingOwn.current = null;
+    sock.send({ type: 'cancelUpload' });
   };
   const useOwn = next => {
     setOwn(next); setPickerOpen(false); setVidErr(null); setVidDiag(''); setNoSound(false);
@@ -375,7 +455,16 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
   const srcName = own?.label || movie.url;
   const showPaste = iAmHost && (!hasMovie || editingUrl);
   const showWaiting = !hasMovie && !iAmHost;
+  const showUpload = !!upload && (!hasMovie || showPaste);
   const showPicker = !showPaste && hasMovie && (!src || pickerOpen);
+  const uploadPct = upload ? Math.floor((upload.received / upload.size) * 100) : 0;
+  const uploadEta = (() => {
+    const job = uploadJob.current;
+    if (!upload || !job?.t0 || upload.received === 0) return '';
+    const secs = (Date.now() - job.t0) / 1000, rate = upload.received / secs;
+    const left = (upload.size - upload.received) / rate;
+    return ` · ${mb(rate)}/s · about ${left > 90 ? `${Math.ceil(left / 60)} min` : `${Math.ceil(left)} s`} left`;
+  })();
   const hasUrl = !!src && !showPaste && !showPicker;
   const showBigPlay = !vidErr && ((mine && !playing && cur === 0) || (!mine && needsTap));
   const tilesSide = tiles === 'side' && !panel;
@@ -396,6 +485,9 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
             ? <StreamVideo stream={remoteStreams[p.id]} />
             : <span className="avatar tile-avatar" style={{ background: p.color }}>{(p.name[0] || '?').toUpperCase()}</span>}
           <span className="tile-name">{p.name}{suffix(p.id)}</span>
+          {peerState[p.id] === 'failed' && <span className="tile-status bad">Can't connect video</span>}
+          {(peerState[p.id] === 'connecting' || peerState[p.id] === 'new') && <span className="tile-status">Connecting…</span>}
+          {peerState[p.id] === 'disconnected' && <span className="tile-status">Reconnecting…</span>}
           {!p.micOn && <span className="tile-muted"><MutedBadgeIcon /></span>}
         </div>
       ))}
@@ -408,7 +500,16 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
       <div className="stage">
         <div className="stage-main">
           <div className="player" ref={playerRef}>
-            {showPaste && (
+            {showUpload && (
+              <div className="overlay-msg upload">
+                <h2>{upload.by === meId ? `Uploading “${upload.name}”` : `${nameOf(upload.by)} is sharing “${upload.name}”`}</h2>
+                <div className="progress"><span style={{ width: `${uploadPct}%` }} /></div>
+                <p>{uploadPct}% of {size(upload.size)}{upload.by === meId ? uploadEta : ''}</p>
+                <p className="fine-dark">{upload.by === meId ? 'Keep this tab open until it finishes. Everyone can start watching as soon as it’s done.' : 'It will start here for you automatically once it’s uploaded.'}</p>
+                {upload.by === meId && <button className="btn-ghost-light" onClick={cancelUpload}>Cancel</button>}
+              </div>
+            )}
+            {showPaste && !showUpload && (
               <form className="paste" onSubmit={setMovie}>
                 <div className="paste-kicker">You're the host</div>
                 <h2>Paste a movie link to start watching.</h2>
@@ -418,17 +519,19 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                 </div>
                 <div className="paste-or">
                   <span>or</span>
-                  <label className="file-btn"><FolderIcon />Play a file from this computer<input type="file" accept="video/*,.mkv" hidden onChange={hostFile} /></label>
-                  <span>Everyone opens their own copy — nothing is uploaded.</span>
+                  <label className="file-btn"><FolderIcon />Share a file from this computer<input type="file" accept="video/*,.mkv" hidden onChange={shareFile} /></label>
+                  <span>It's uploaded to this room so everyone can watch, and deleted when the room closes.</span>
                 </div>
+                {uploadErr && <p className="paste-err">{uploadErr}</p>}
                 <div className="paste-hint">
                   <span>Direct links (.mp4, .webm, .mkv) work best.</span>
                   <button type="button" className="link-light" onClick={useSample}>Try a sample movie</button>
+                  <label className="link-light">Everyone already has the file?<input type="file" accept="video/*,.mkv" hidden onChange={hostFile} /></label>
                   {editingUrl && hasMovie && <button type="button" className="link-light" onClick={() => setEditingUrl(false)}>Keep current movie</button>}
                 </div>
               </form>
             )}
-            {showWaiting && (
+            {showWaiting && !showUpload && (
               <div className="overlay-msg">
                 <h2>{nameOf(R.host)} is picking the movie</h2>
                 <p>It will start here for you automatically.</p>
@@ -466,7 +569,10 @@ export default function Room({ session, code, name, initial, stream, camOn, micO
                     {!mine && <span className="big-play-label">Tap to catch up with {nameOf(R.controller)}</span>}
                   </>
                 )}
-                {noSound && !vidErr && (
+                {upload && !showUpload && (
+                  <div className="notice"><span>{upload.by === meId ? 'Uploading' : `${nameOf(upload.by)} is sharing`} “{upload.name}” — {uploadPct}%</span></div>
+                )}
+                {noSound && !vidErr && !upload && (
                   <div className="notice">
                     <span>No sound? This .mkv’s audio is probably AC3 or DTS, which browsers can’t play. Use a version with AAC or Opus audio.</span>
                     <button className="panel-close" onClick={() => setNoSound(false)} title="Dismiss"><CloseIcon /></button>

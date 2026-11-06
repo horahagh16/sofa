@@ -85,6 +85,15 @@ button:disabled { cursor: default; }
 .paste-or { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: #a6a9b0; max-width: 680px; }
 .file-btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border: 1px solid #4a4c52; border-radius: 999px; color: #eceef2; font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .file-btn:hover { background: #2a2b2f; }
+.paste-err { margin: 0; font-size: 13px; color: #ff9b9e; }
+.paste-hint label.link-light { cursor: pointer; }
+.overlay-msg.upload { gap: 14px; }
+.progress { width: min(420px, 100%); height: 8px; border-radius: 999px; background: #3a3b40; overflow: hidden; }
+.progress span { display: block; height: 100%; background: #8fb6ff; transition: width .3s; }
+.fine-dark { font-size: 13px; }
+.overlay-msg .btn-ghost-light { height: 40px; }
+.tile-status { position: absolute; left: 10px; top: 8px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #eceef2; }
+.tile-status.bad { background: rgba(229, 72, 77, .9); color: #fff; }
 .err-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .err-actions .btn-ghost-light { height: 44px; padding: 0 22px; }
 .link-light { border: 0; background: transparent; color: #8fb6ff; font-weight: 600; padding: 4px 0; }
